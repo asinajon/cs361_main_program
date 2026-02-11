@@ -12,7 +12,7 @@ if (isset($_SESSION['user_id']) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // $page_title = 'Register';
-// include ('includes/header.html');
+include ('includes/header.html');
 
 // Check for form submission:
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {

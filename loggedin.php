@@ -1,6 +1,6 @@
 <?php 
 // The user is redirected here from login.php
-session_start(); // Start the session.
+session_start();
 
 // If no session value is present, redirect the user:
 if (!isset($_SESSION['user_id'])) {
@@ -13,9 +13,9 @@ if (!isset($_SESSION['user_id'])) {
 
 // Set the page title and include the HTML header:
 $page_title = 'Logged In!';
-// include('includes/header.html');
+include('includes/header.html');
 
-// Print a customized message:
+
 echo "<h1>Logged In!</h1>
 <p>You are now logged in, {$_SESSION['email']}!</p>
 </p>";

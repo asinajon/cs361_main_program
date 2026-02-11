@@ -10,7 +10,7 @@ if (isset($_SESSION['user_id'])) {
 }
 
 $page_title = 'Weekly Movie Scheduler - Login';
-// include('includes/header.html');
+include('includes/header.html');
 
 // Print any error message, if they exist:
 if (isset($errors) && !empty($errors)){
@@ -22,19 +22,8 @@ if (isset($errors) && !empty($errors)){
     echo '</p><p>Please try again.</p>';
 }    
 ?>
-<head>
-    <meta charset="UTF-8">
-    
-    <title>Weekly Movie Scheduler - Login</title>
-    
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
-    </style>
-</head>
-<h1>Weekly Movie Scheduler</h1>
-<h2>Login</h2>
+
+<h1>Login</h1>
 <form action="login.php" method="post">
     <p>Email Address: <input type="email" name="email" size="20" maxlength="60"> </p>
     <p>Password: <input type="password" name="pass" size="20" maxlength="60"> </p>

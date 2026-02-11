@@ -35,11 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_new'])) {
     exit();
 }
 // 3. FETCH ALL MOVIES FOR THE CURRENT WEEK
-// We use your SQL logic to ensure they are sorted by day and then by time.
-// $q = "SELECT id, movie_title, show_date, show_time, duration, location 
-//       FROM movie_schedule 
-//       WHERE user_id = $user_id 
-//       ORDER BY show_date ASC, show_time ASC";
 $q = "SELECT id, movie_title, show_date, show_time, duration, location, 
       DATE_FORMAT(show_date, '%W') AS day_of_week 
       FROM movie_schedule 
@@ -60,62 +55,10 @@ while ($row = mysqli_fetch_array($r, MYSQLI_ASSOC)) {
 function formatTime($time) {
     return date("g:i A", strtotime($time));
 }
+
+$page_title = "This Week's Movie Schedule";
+include ('includes/header.html');
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Weekly Movie Planner</title>
-    <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
-        .container { max-width: 1300px; margin: auto; background: white; padding: 20px; border-radius: 8px; }
-        
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th { background: #eee; border: 1px solid #ddd; padding: 10px; font-weight: bold; }
-        td { border: 1px solid #ddd; vertical-align: top; padding: 10px; min-height: 200px; }
-
-        .movie-entry {
-            padding: 8px;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
-            background: #fff;
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-
-        /* Highlighting logic for comparisons */
-        .selected-box {
-            border: 2px solid #000;
-            background-color: #f9f9f9;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-        }
-
-        .standard-box {
-            opacity: 0.5; /* Dims movies not currently selected for comparison */
-        }
-
-  
-        .quick-add {
-            margin-top: 20px;
-            padding-top: 10px;
-            border-top: 1px dashed #bbb;
-        }
-        .quick-add input {
-            width: 95%;          
-            margin-bottom: 3px;  
-            font-size: 0.8rem;   
-            padding: 2px;        
-            box-sizing: border-box; 
-        }
-
-        .movie-entry span { display: block; }
-        .btn-row { margin-top: 20px; text-align: center; background: #eee; padding: 20px; position: sticky; bottom: 0; }
-        input[type="submit"] { padding: 10px 20px; cursor: pointer; font-weight: bold; }
-        .btn-save { background-color: #28a745; color: white; border: none; margin-left: 10px; }
-    </style>
-</head>
-<body>
 
 <div class="container">
     <h1>Weekly Movie Schedule</h1>
@@ -172,5 +115,4 @@ function formatTime($time) {
     </form>
 </div>
 
-</body>
 </html>

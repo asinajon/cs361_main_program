@@ -1,0 +1,78 @@
+        body {
+			font-family: Arial, sans-serif;
+			background-color: #f4f4f4;
+			padding: 20px;
+		}
+        .container {
+			max-width: 1300px;
+			margin: auto;
+			background: white;
+			padding: 20px;
+			border-radius: 8px;
+		}
+        
+        table {
+			width: 100%;
+			border-collapse: collapse;
+			table-layout: fixed;
+		}
+
+        th {
+			background: #eee;
+			border: 1px solid #ddd;
+			padding: 10px;
+			font-weight: bold;}
+
+        td {
+			border: 1px solid #ddd;
+			vertical-align: top;
+			padding: 10px;
+			min-height: 200px;
+		}
+
+        .movie-entry {
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            background: #fff;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        /* Highlighting logic for comparisons */
+        .selected-box {
+            border: 2px solid #000;
+            background-color: #f9f9f9;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .standard-box {
+            opacity: 0.5; /* Dims movies not currently selected for comparison */
+        }
+
+  
+        .quick-add {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px dashed #bbb;
+        }
+        .quick-add input {
+            width: 95%;          
+            margin-bottom: 3px;  
+            font-size: 0.8rem;   
+            padding: 2px;        
+            box-sizing: border-box; 
+        }
+
+        .movie-entry span { 
+			display: block;
+		}
+        .btn-row {
+			margin-top: 20px; text-align: center; background: #eee; padding: 20px; position: sticky; bottom: 0;
+		}
+        input[type="submit"] {
+			padding: 10px 20px; cursor: pointer; font-weight: bold;
+		}
+        .btn-save {
+			background-color: #28a745; color: white; border: none; margin-left: 10px;
+		}
