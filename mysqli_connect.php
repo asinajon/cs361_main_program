@@ -7,9 +7,9 @@
 // Set the database access information as constants:
 
 DEFINE ('DB_USER', 'root');
-DEFINE ('DB_PASSWORD', 'root');
-DEFINE ('DB_HOST', 'localhost');
-DEFINE ('DB_NAME', 'sitename');
+DEFINE ('DB_PASSWORD', '');
+DEFINE ('DB_HOST', '127.0.0.1');
+DEFINE ('DB_NAME', 'movie_scheduler');
 
 
 // Make the connection:

@@ -38,13 +38,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 	} else {
 		$errors[] = 'You forgot to enter your password.';
 	}
+
+	if (empty($_POST['birthdate'])){
+		$errors[] = 'You forgot to enter your birthdate.';
+	} else {
+		$bd = $_POST['birthdate'];
+	}
 	
 	if (empty($errors)) { // If everything's OK.
 	
 		// Register the user in the database...
 		
 		// Make the query:
-		$q = "INSERT INTO users (email, pass) VALUES ('$e', SHA1('$p'))";		
+		$q = "INSERT INTO users (email, pass, birthdate) VALUES ('$e', SHA1('$p'), '$bd')";		
 		
 		
 		$r = @mysqli_query ($dbc, $q); // Run the query.
