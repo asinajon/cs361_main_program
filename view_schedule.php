@@ -1,254 +1,371 @@
 <?php
 session_start();
 
-// Redirect to login if the user isn't logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
 }
 
-require('mysqli_connect.php'); 
-$user_id = $_SESSION['user_id']; // This is your link to the DB
-echo $_SESSION['user_id'];
-// 2. RETRIEVE 'COMPARE' SELECTIONS FROM URL
-// This identifies which showtimes the user is currently "drafting"
-// 2. HANDLE POST ACTIONS (Comparison + New Insertion)
-// $selected_ids = $_POST['compare'] ?? [];
+require_once('mysqli_connect.php');
 
-// if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_new'])) {
-//     // Loop through the arrays to find which day had data entered
-//     foreach ($_POST['new_title'] as $day_key => $title) {
-//         if (!empty($title)) {
-//             $date      = $_POST['add_date'][$day_key];
-//             $time      = $_POST['new_time'][$day_key];
-//             $dur       = (int)$_POST['new_duration'][$day_key];
-//             $loc       = mysqli_real_escape_string($dbc, $_POST['new_location'][$day_key]);
-//             $title_esc = mysqli_real_escape_string($dbc, $title);
+$user_id = (int)$_SESSION['user_id'];
 
-//             $insert_q = "INSERT INTO movie_schedule (user_id, title, show_date, show_time, duration, location) 
-//                          VALUES ($user_id, '$title_esc', '$date', '$time', $dur, '$loc')";
-//             mysqli_query($dbc, $insert_q);
-//         }
-//     }
-//     // Refresh to show the new movie and clear POST data
-//     header("Location: view_schedule.php");
-//     exit();
-// }
-// $current_region = 'US';
-// $current_length = 'short';
-// $user_id = $_SESSION['user_id'];
-$fetch_date_prefs = "SELECT date_region, date_length FROM users WHERE user_id = ?";
-$fetch_stmt = $dbc->prepare($fetch_date_prefs);
-$fetch_stmt->bind_param("i", $user_id);
-$fetch_stmt->execute();
-$fetch_result = $fetch_stmt->get_result();
-$row = $fetch_result->fetch_assoc();
-$user_region = $row['date_region'];
-$user_length = $row['date_length'];
+// Helper Functions
 
-$raw_dates = [];
-$date = new DateTime("monday this week");
-for ($x = 0; $x <= 6; $x++){
-    $raw_dates[] = $date->format('Y-m-d');
-    $date->modify('+1 day');
+function formatTime($time)
+{
+    return date("g:i A", strtotime($time));
 }
 
-$date_info_out = array(
-    'format' => [$user_region, $user_length],
-    'dates' => $raw_dates
-);
+function get_total_duration($pre, $movie)
+{
+    $data = json_encode([
+        'pre_dur' => (int)$pre,
+        'movie_dur' => (int)$movie
+    ]);
 
-$json_date_info_out = json_encode($date_info_out);
+    $ch = curl_init('http://127.0.0.1:5006/calculate_duration');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
 
-$ch = curl_init('http://127.0.0.1:5005/format_dates');
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $json_date_info_out);
-$headers = [
-    'Content-Type: application/json'
-];
-curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $response = curl_exec($ch);
+    curl_close($ch);
 
-$response = curl_exec($ch);
-
-if ($response === false) {
-    $formatted_dates = $raw_dates;
-} else {
-    $formatted_dates = json_decode($response, true);
+    $decoded = json_decode($response, true);
+    return ($response !== false && isset($decoded['total_show_duration'])) ? $decoded['total_show_duration'] : ($pre + $movie);
 }
 
-curl_close($ch);
-// $find_title_q = "SELECT movie_id, duration_minutes, rating FROM movies WHERE title = '$title_esc'";
-// $find_title = mysql_query($dbc, $find_title_q);
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+function get_total_cost($costs) {
+
+    if (empty($costs)) return 0.00;
+
+    $data = json_encode(
+        [
+            'costs' => $costs,
+        ]
+    );
+    $ch = curl_init('http://127.0.0.1:5007/calculate_cost');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $decoded = json_decode($response, true);
+    return ($response !== false && isset($decoded['total_expenditure'])) ? $decoded['total_expenditure'] : array_sum($costs);
+}
+
+function render_movie_row($movie, &$i, $is_restricted = false)
+{
+    $bg_color = $is_restricted ? '#fff3cd' : 'transparent';
+    echo '<div class="movie-row" style="background-color:' . $bg_color . ' !important; border-bottom:1px solid #ccc;padding:10px 0;margin-bottom:5px;">';
     
+    // Hidden fields to preserve state on POST
+    echo '<input type="hidden" name="movies[' . $i . '][show_date]" value="' . $movie['show_date'] . '">';
+    echo '<input type="hidden" name="movies[' . $i . '][preshow_length]" value="' . $movie['preshow_length'] . '">';
+    echo '<input type="hidden" name="movies[' . $i . '][duration_minutes]" value="' . $movie['duration_minutes'] . '">';
+    echo '<input type="hidden" name="movies[' . $i . '][location]" value="' . htmlspecialchars($movie['location']) . '">';
+    echo '<input type="hidden" name="movies[' . $i . '][cost]" value="' . $movie['cost'] . '">';
+    
+    // Hidden field so the rating persists in the POST data
+    echo '<input type="hidden" name="movies[' . $i . '][rating]" value="' . htmlspecialchars($movie['rating']) . '">';
+
+    echo '<span>' . formatTime($movie['show_time']) . '</span><br>';
+    echo '<input type="text" name="movies[' . $i . '][title]" value="' . htmlspecialchars($movie['title']) . '" style="font-weight:bold;width:60%;">';
+    echo '<br>';
+    echo '<small>Year:</small> <input type="number" name="movies[' . $i . '][year]" value="' . $movie['release_year'] . '" style="width:60px;">';
+    echo '<br>';
+    
+    // Displayed as read-only text
+    echo '<small>Rating: ' . htmlspecialchars($movie['rating']) . '</small><br>';
+    
+    echo '<small>Preshow: ' . $movie['preshow_length'] . ' min</small><br>';
+    echo '<small>Total: ' . $movie['total_duration'] . ' min</small><br>';
+    echo '<small>Cost: $' . number_format($movie['cost'], 2) . ' | ' . htmlspecialchars($movie['location']) . '</small>';
+    echo '</div>';
+
+    $i++;
+}
+
+function render_quick_add($day_index, $raw_dates)
+{
+    // $day_index is array key so each day has its own "New Movie" slot
+    echo '
+    <div class="quick-add" style="background:#f9f9f9; padding:10px; border:1px dashed #999; margin-top:10px;">
+        <h4 style="margin:0 0 10px 0; font-size:0.9rem;">Quick Add Movie</h4>
+        
+        <input type="hidden" name="new_movies[' . $day_index . '][show_date]" value="' . $raw_dates[$day_index] . '">
+        
+        <input type="text" name="new_movies[' . $day_index . '][title]" placeholder="Film Title" style="width:90%; margin-bottom:5px;">
+
+        <div style="display:flex; gap:5px; margin-bottom:5px;">
+            <input type="number" name="new_movies[' . $day_index . '][year]" placeholder="Year" style="width:65px;">
+            <input type="time" name="new_movies[' . $day_index . '][show_time]" value="19:00">
+        </div>
+
+        <div style="margin-bottom:5px;">
+            <small><strong>Rating:</strong></small>
+            <select name="new_movies[' . $day_index . '][rating]">
+                <option value="G">G</option>
+                <option value="PG">PG</option>
+                <option value="PG-13">PG-13</option>
+                <option value="R">R</option>
+                <option value="NR" selected>NR</option>
+            </select>
+        </div>
+
+        <div style="margin-bottom:5px;">
+            <small><strong>Preshow:</strong></small>
+            <select name="new_movies[' . $day_index . '][preshow_length]">
+                <option value="0">0</option>
+                <option value="10">10</option>
+                <option value="15" selected>15</option>
+                <option value="20">20</option>
+                <option value="25">25</option>
+            </select>
+        </div>
+
+        <input type="text" name="new_movies[' . $day_index . '][location]" placeholder="Theater Name" style="width:90%; margin-bottom:5px;">
+        
+        <div style="display:flex; gap:5px;">
+            <input type="number" name="new_movies[' . $day_index . '][duration_minutes]" placeholder="Mins" style="width:60px;">
+            <input type="number" step="0.01" name="new_movies[' . $day_index . '][cost]" placeholder="Cost $" style="width:70px;">
+        </div>
+    </div>';
+}
+
+function is_age_restricted($user_dob, $show_date, $rating) {
+    $rating = trim(strtoupper($rating));
+    if ($rating == 'G' || $rating == 'PG' || $rating == 'NR') {
+        return false;
+    }
+    $data = json_encode(
+        [
+            'birthdate' => $user_dob,
+            'show_date' => $show_date,
+            'rating' => $rating
+        ]
+    );
+    $ch = curl_init('http://127.0.0.1:5008/verify_age');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $decoded = json_decode($response, true);
+    return ($response !== false && isset($decoded['is_restricted'])) ? $decoded['is_restricted'] : false;
+}
+
+// Handle Post Requests
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // Update Preferences
     if (isset($_POST['update_prefs'])) {
-        $new_region = $_POST['date_region'];
-        $new_length = $_POST['date_length'];
+        $region = $_POST['date_region'] ?? 'US';
+        $length = $_POST['date_length'] ?? 'short';
 
-        $update_date_pref = "UPDATE users SET date_region = ?, date_length = ? WHERE user_id = ?";
-        $update_stmt = $dbc->prepare($update_date_pref);
-        $update_stmt->bind_param("ssi", $new_region, $new_length, $_SESSION['user_id']);
-        $update_stmt->execute();
-
-        $_SESSION['date_region'] = $new_region;
-        $_SESSION['date_length'] = $new_length;
+        $stmt = $dbc->prepare("UPDATE users SET date_region=?, date_length=? WHERE user_id=?");
+        $stmt->bind_param("ssi", $region, $length, $user_id);
+        $stmt->execute();
 
         header("Location: view_schedule.php");
         exit();
     }
 
-    if (isset($_POST['submit_new'])) {
-        foreach($_POST['new_title'] as $day_key => $title) {
-            if (!empty($title)) {
-                $title_esc = mysqli_real_escape_string($dbc, $title);
-                $find_title_q = "SELECT movie_id, duration_minutes, rating FROM movies WHERE title = '$title_esc'";
-                $find_title = mysqli_query($dbc, $find_title_q);
-                if (mysqli_num_rows($find_title_r) > 0) {
-                    echo "DEBUG: Movie Found! <br>";
-                    // SCENARIO A: Movie exists in the library
-                    $row = mysqli_fetch_array($find_title_r, MYSQLI_ASSOC);
-                    $movie_id = $row['movie_id'];
-                    $dur      = $row['duration_minutes'];
-                    $rating   = $row['rating'];
-                } else {
-                    echo "DEBUG: Movie NOT Found. Creating new entry… <br>";
-                    // SCENARIO B: Movie is new, must be added to library
-                    $dur          = (int)$_POST['new_duration'][$day_key];
-                    $rating       = $_POST['new_rating'][$day_key];
-                    $release_year = (int)$_POST['new_release_year'][$day_key];
+    // Insert New Movies
+    if (isset($_POST['submit_new']) && !empty($_POST['new_movies'])) {
+        foreach ($_POST['new_movies'] as $movie) {
+            $title = trim($movie['title'] ?? '');
+            $year  = trim($movie['year'] ?? '');
 
-                    $insert_movie_q = "INSERT INTO movies (title, duration_minutes, rating, release_year) 
-                                    VALUES ('$title_esc', $dur, '$rating', $release_year)";
-                    mysqli_query($dbc, $insert_movie_q);
-                    
-                    $movie_id = mysqli_insert_id($dbc);
-                }
-                echo "Debug: Proceeding with Movie ID: $movie_id, Rating: $rating, Duration: $dur <br><hr>";
+            if (empty($title) || empty($year)) {
+                continue;
             }
+
+            $title_esc = mysqli_real_escape_string($dbc, $title);
+            $year = (int)$year;
+
+            $find_r = mysqli_query($dbc, "SELECT movie_id FROM movies WHERE title='$title_esc' AND release_year=$year LIMIT 1");
+
+            if ($find_r && mysqli_num_rows($find_r) > 0) {
+                $movie_id = (int)mysqli_fetch_assoc($find_r)['movie_id'];
+            } else {
+                $duration = (int)($movie['duration_minutes'] ?? 0);
+                $rating = mysqli_real_escape_string($dbc, $movie['rating'] ?? 'NR');
+
+                mysqli_query($dbc, "INSERT INTO movies (title,duration_minutes,rating,release_year) VALUES ('$title_esc',$duration,'$rating',$year)");
+                $movie_id = mysqli_insert_id($dbc);
+            }
+
+            $show_date = mysqli_real_escape_string($dbc, $movie['show_date'] ?? '');
+            if (!$show_date) {
+                continue;
+            }
+
+            $show_time = date("H:i:s", strtotime($movie['show_time'] ?? '19:00:00'));
+            $preshow = mysqli_real_escape_string($dbc, $movie['preshow_length'] ?? '15');
+            $location = mysqli_real_escape_string($dbc, $movie['location'] ?? '');
+            $cost = isset($movie['cost']) && is_numeric($movie['cost']) ? (float)$movie['cost'] : 0.0;
+
+            mysqli_query($dbc, "INSERT INTO movie_schedule (movie_id,user_id,show_date,show_time,preshow_length,location,cost) VALUES ($movie_id,$user_id,'$show_date','$show_time','$preshow','$location',$cost)");
         }
+
+        header("Location: view_schedule.php");
+        exit();
     }
 }
 
-// 3. FETCH ALL MOVIES FOR THE CURRENT WEEK
-// $q = "SELECT id, movie_title, show_date, show_time, duration, location, 
-//       DATE_FORMAT(show_date, '%W') AS day_of_week 
-//       FROM movie_schedule 
-//       WHERE user_id = $user_id
-//       ORDER BY show_date ASC, show_time ASC"; // Ensures chronological order per day
+// Fetch preferences and dates
 
-// $r = mysqli_query($dbc, $q);
+$stmt = $dbc->prepare("SELECT date_region, date_length, birthdate FROM users WHERE user_id=?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$prefs = $stmt->get_result()->fetch_assoc();
+$user_dob = $prefs['birthdate'];
 
-// Organize results into an array grouped by day for easy grid rendering
+$user_region = $prefs['date_region'];
+$user_length = $prefs['date_length'];
+
+$raw_dates = [];
+$date = new DateTime("monday this week");
+for ($x = 0; $x <= 6; $x++) {
+    $raw_dates[] = $date->format('Y-m-d');
+    $date->modify('+1 day');
+}
+
+// Date Format Microservice
+$date_info = ['format' => [$user_region, $user_length], 'dates' => $raw_dates];
+$ch = curl_init('http://127.0.0.1:5005/format_dates');
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($date_info));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+$response = curl_exec($ch);
+curl_close($ch);
+$formatted_dates = $response ? json_decode($response, true) : $raw_dates;
+
+// Fetch Schedule
+$fetch_q = "SELECT ms.id, ms.show_date, ms.show_time, ms.preshow_length, ms.location, ms.cost, m.title, m.release_year, m.rating, m.duration_minutes, DATE_FORMAT(ms.show_date,'%W') AS day_of_week
+            FROM movie_schedule ms
+            JOIN movies m ON ms.movie_id = m.movie_id
+            WHERE ms.user_id = $user_id
+            AND ms.show_date BETWEEN '{$raw_dates[0]}' AND '{$raw_dates[6]}'
+            ORDER BY ms.show_date, ms.show_time";
+
+$result = mysqli_query($dbc, $fetch_q);
 $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 $schedule = array_fill_keys($days, []);
 
-// while ($row = mysqli_fetch_array($r, MYSQLI_ASSOC)) {
-//     $schedule[$row['day_of_week']][] = $row;
-// }
-
-// Helper function for 12-hour formatting
-function formatTime($time) {
-    return date("g:i A", strtotime($time));
+while ($row = mysqli_fetch_assoc($result)) {
+    $row['total_duration'] = get_total_duration($row['preshow_length'], $row['duration_minutes']);
+    $schedule[$row['day_of_week']][] = $row;
 }
 
-$page_title = "This Week's Movie Schedule";
-include ('includes/header.html');
+$page_title = "Weekly Movie Schedule";
+include('includes/header.html');
+$restricted_list = [];
 ?>
 
 <div class="container">
-    <h1>Weekly Movie Schedule</h1>
-    <form method="POST" action="view_schedule.php" class="settings-bar">
+  <h1>Weekly Movie Schedule</h1>
+
+    <form action="view_schedule.php" method="POST" style="margin-bottom: 20px;">
         <label>Region:</label>
         <select name="date_region">
-            <option value="US" <?php if($user_region == 'US') echo 'selected'; ?>>US</option>
-            <option value="International" <?php if($user_region =='International') echo 'selected'; ?>>International</option>
+            <option value="US" <?= ($user_region == 'US') ? 'selected' : '' ?>>US</option>
+            <option value="International" <?= ($user_region == 'International') ? 'selected' : '' ?>>International</option>
         </select>
-        <label>Date Length</label>
+
+        <label>Date Length:</label>
         <select name="date_length">
-            <option value="Short" <?php if($user_length == 'short') echo 'selected'; ?>>Short</option>
-            <option value="Long" <?php if($user_length == 'long') echo 'selected'; ?>>Long</option>
-        </select> 
-        <input type="submit" name="update_prefs" value="Update View" class="btn-settings">
+            <option value="short" <?= ($user_length == 'short') ? 'selected' : '' ?>>Short</option>
+            <option value="long" <?= ($user_length == 'long') ? 'selected' : '' ?>>Long</option>
+        </select>
+
+        <input type="submit" name="update_prefs" value="Update View">
     </form>
+    
     <form action="view_schedule.php" method="POST">
-        <table>
+        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
             <thead>
-                <tr><?php foreach ($formatted_dates as $index => $date_string): ?>
-                    <th>
-                        <?php echo $days[$index]; ?><br>
-                        <?php echo $date_string; ?>
-                    </th>
+                <tr>
+                    <?php foreach ($formatted_dates as $index => $date_string): ?>
+                        <th>
+                            <?= $days[$index] ?><br>
+                            <small><?= $date_string ?></small>
+                        </th>
                     <?php endforeach; ?>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <?php foreach ($days as $day): ?>
-                        <td>
-                            <?php if (!empty($schedule[$day])): ?>
-                                <?php foreach ($schedule[$day] as $movie): ?>
-                                    <?php 
-                                        $is_selected = in_array($movie['id'], $selected_ids);
-                                        $class = (empty($selected_ids) || $is_selected) ? 'selected-box' : 'standard-box';
-                                    ?>
-                                    <div class="movie-entry <?php echo $class; ?>">
-                                        <input type="checkbox" name="compare[]" value="<?php echo $movie['id']; ?>" 
-                                               <?php if($is_selected) echo 'checked'; ?>>
-                                        <span><?php echo formatTime($movie['show_time']); ?></span>
-                                        <span><strong><?php echo htmlspecialchars($movie['movie_title']); ?></strong></span>
-                                        <span><?php echo htmlspecialchars($movie['location']); ?></span>
-                                    </div>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-
-                            <div class="quick-add">
-                                <small><strong>Add to <?php echo $day; ?></strong></small>
-                                <input type="hidden" name="add_date[<?php echo $day; ?>]" 
-                                    value="<?php echo $raw_dates[$index]; ?>">
-                                
-                                <input type="text" name="new_title[<?php echo $day; ?>]" placeholder="Film Title" required>
-                                <input type="time" name="new_time[<?php echo $day; ?>]" required>
-                                <small><strong>Rating</strong></small>
-                                <select name="new_rating[<?php echo $day; ?>]">
-                                    <option value="G">G</option>
-                                    <option value="PG">PG</option>
-                                    <option value="PG-13">PG-13</option>
-                                    <option value="R">R</option>
-                                    <option value="NR">NR</option>
-                                </select>
-                                <small><strong>Preshow</strong></small>
-                                <select name="new_preshow[<?php echo $day; ?>]">
-                                    <option value="0">0 min</option>
-                                    <option value="10">10 min</option>
-                                    <option value="15" selected>15 min</option>
-                                    <option value="20">20 min</option>
-                                    <option value="25">25 min</option>
-                                </select>
-
-
-                                <input type="text" name="new_location[<?php echo $day; ?>]" placeholder="Theater" style="width: 100%;">
-                                
-                                <div style="display: flex; flex-direction: column; gap: 8px;">
-                                    <div style="display: flex; gap: 4%;">
-                                        <input type="number" name="new_duration[<?php echo $day; ?>]" placeholder="Min" style="width: 38%; padding: 4px;">
-                                        <input type="number" name="new_release_year[<?php echo $day; ?>]" placeholder="Year" style="width: 38%; padding: 4px;">
-                                    </div>
-                                    <input type="number" step="0.01" name="new_cost[<?php echo $day; ?>]" placeholder="Cost $" style="width: 50%; border: 1px solid #ccc;">
+                    <?php 
+                        $i = 0; 
+                        $day_cost_totals = [];  
+                    ?>
+                    <?php foreach ($days as $day_index => $day): ?>
+                        <?php $day_costs = []; ?>
+                        <td valign="top" style="width: 14%;">
+                            <?php
+                            if (!empty($schedule[$day])) {
+                                foreach ($schedule[$day] as $movie) {
+                                    $day_costs[] = (float)$movie['cost'];
+                                    
+                                    $is_flagged = is_age_restricted($user_dob, $movie['show_date'], $movie['rating']);
+                                    
+                                    if($is_flagged) {
+                                        $restricted_list[] = $movie['title'];
+                                    }
+                                    render_movie_row($movie, $i, $is_flagged);
+                                }
+                            }
+                            $day_cost_total = get_total_cost($day_costs);
+                            $day_cost_totals[] = $day_cost_total;
+                            ?>
+                            <div class="day-total-container" style="margin: 15px 0; padding: 10px 5px; border-top: 2px solid #444; background: #fdfdfd;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="font-size: 0.8rem; color: #666; text-transform: uppercase; font-weight: bold;">Day Total</span>
+                                    <span style="font-size: 1.1rem; font-weight: bold; color:#2c3e50;"> $ <?php echo number_format($day_cost_total, 2); ?> </span>
                                 </div>
                             </div>
+                            <?php
+                            render_quick_add($day_index, $raw_dates);
+                            ?>
                         </td>
                     <?php endforeach; ?>
                 </tr>
             </tbody>
         </table>
+        <?php
+        if (!empty($restricted_list)) {
+            echo '<div style="background:#fff3cd; border:1px solid #ffeeba; padding:15px; margin-top:20px; color:#856404;">';
+            echo '<strong>Note:</strong> The following movies may exceed age requirements based on your age: ';
+            echo '<em>' . implode(', ', array_unique($restricted_list)) . '</em>';
+            echo '</div>';
+        }
+        ?>
+        <div class="week-total-cost-container" style="margin: 15px 0; padding: 10px; border: 2px solid #444; background: #eee; text-align: right;">
+            <span style="font-weight: bold;">TOTAL WEEKLY EXPENDITURE: </span>
+            <span style="font-size: 1.3rem; font-weight: bold;">
+                $<?php echo number_format(get_total_cost($day_cost_totals), 2); ?>
+            </span>
+        </div>
 
-        <div class="btn-row">
-            <input type="submit" name="update_compare" value="Update Comparison View">
-            <input type="submit" name="submit_new" value="Save New Entries" class="btn-save">
-            <a href="view_schedule.php" style="margin-left:15px; font-size: 0.9rem;">Clear Selections</a>
+        <div style="margin-top:20px;">
+            <input type="submit" name="submit_new" value="Save New Entries" style="padding: 10px 20px; background: #28a745; color: #fff; border: none; cursor: pointer;">
         </div>
     </form>
 </div>
-
+</body>
 </html>
